@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Seamless Texture Tester</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e0f;
+    --panel: #161618;
+    --border: #2a2a2e;
+    --text: #e8e6e1;
+    --muted: #6b6a6e;
+    --accent: #f0c040;
+    --accent2: #4af0a0;
+    --panel-w: 260px;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    overflow: hidden;
+  }
+
+  /* ── LAYOUT ── */
+  #app {
+    display: flex;
+    width: 100%; height: 100%;
+  }
+
+  /* ── CANVAS AREA ── */
+  #canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+  }
+  #canvas-wrap.dragging { cursor: grabbing; }
+
+  #tiled-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    image-rendering: pixelated;
+  }
+
+  /* ── UPLOAD OVERLAY ── */
+  #upload-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: var(--bg);
+    z-index: 10;
+    transition: opacity .35s ease;
+  }
+  #upload-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .upload-icon {
+    width: 80px; height: 80px;
+    border: 2px solid var(--accent);
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(240,192,64,.4); }
+    50% { box-shadow: 0 0 0 16px rgba(240,192,64,0); }
+  }
+
+  .upload-icon svg { width: 36px; height: 36px; stroke: var(--accent); fill: none; stroke-width: 1.5; }
+
+  #upload-overlay h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(1.4rem, 4vw, 2.2rem);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    color: var(--text);
+  }
+
+  #upload-overlay p {
+    font-size: .8rem;
+    color: var(--muted);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  #drop-zone {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #drop-zone.drag-over::after {
+    content: '';
+    position: absolute; inset: 12px;
+    border: 2px dashed var(--accent);
+    border-radius: 12px;
+    background: rgba(240,192,64,.04);
+    pointer-events: none;
+  }
+
+  /* ── UPLOAD BTN ── */
+  .btn-upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 22px;
+    background: var(--accent);
+    color: #0e0e0f;
+    font-family: 'DM Mono', monospace;
+    font-size: .82rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform .15s, opacity .15s;
+  }
+  .btn-upload:hover { opacity: .85; transform: translateY(-1px); }
+  .btn-upload:active { transform: translateY(0); }
+  #file-input { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+
+  /* ── SIDE PANEL ── */
+  #panel {
+    width: var(--panel-w);
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    z-index: 20;
+    transition: transform .3s ease;
+  }
+
+  .panel-header {
+    padding: 20px 18px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-header h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .panel-header span {
+    display: block;
+    font-size: .7rem;
+    color: var(--muted);
+    margin-top: 2px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .panel-section {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .label {
+    font-size: .7rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+
+  /* Zoom slider */
+  .zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .zoom-val {
+    font-size: .8rem;
+    color: var(--accent);
+    min-width: 48px;
+    text-align: right;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 3px;
+    background: var(--border);
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform .1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+  /* Zoom buttons */
+  .zoom-btns {
+    display: flex;
+    gap: 6px;
+  }
+  .zoom-btns button {
+    flex: 1;
+    padding: 7px 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: .82rem;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .zoom-btns button:hover { background: var(--border); border-color: var(--accent); }
+
+  /* Tile size */
+  .tile-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .tile-val {
+    font-size: .8rem;
+    color: var(--accent2);
+    min-width: 52px;
+    text-align: right;
+  }
+  input[type=range].green::-webkit-slider-thumb { background: var(--accent2); }
+
+  /* Info block */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .info-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .info-item .key { font-size: .62rem; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .info-item .val { font-size: .82rem; color: var(--text); margin-top: 2px; }
+
+  /* Reset btn */
+  .btn-reset {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: .78rem;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .btn-reset:hover { color: var(--text); border-color: var(--text); }
+
+  /* Thumbnail */
+  #thumb-wrap {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  #thumb-img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    display: none;
+    image-rendering: pixelated;
+  }
+  #thumb-placeholder {
+    width: 100%; aspect-ratio: 1;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted);
+    font-size: .72rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  /* Mobile toggle */
+  #panel-toggle {
+    display: none;
+    position: absolute;
+    top: 14px; right: 14px;
+    z-index: 30;
+    width: 40px; height: 40px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── HUD ── */
+  #hud {
+    position: absolute;
+    bottom: 16px; left: 16px;
+    display: flex;
+    gap: 8px;
+    z-index: 5;
+  }
+  .hud-pill {
+    background: rgba(14,14,15,.82);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: .72rem;
+    color: var(--muted);
+    letter-spacing: .06em;
+    pointer-events: none;
+  }
+  .hud-pill span { color: var(--text); }
+
+  /* ── MOBILE ── */
+  @media (max-width: 600px) {
+    :root { --panel-w: 100vw; }
+
+    #panel {
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      transform: translateX(100%);
+      width: min(280px, 85vw);
+      border-left: 1px solid var(--border);
+    }
+    #panel.open { transform: translateX(0); }
+    #panel-toggle { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Canvas area -->
+  <div id="canvas-wrap">
+    <canvas id="tiled-canvas"></canvas>
+
+    <!-- Upload overlay -->
+    <div id="upload-overlay" onclick="triggerFileInput(event)">
+      <div id="drop-zone">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:20px;cursor:pointer">
+          <div class="upload-icon">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <div style="text-align:center">
+            <h1>Drop your texture</h1>
+            <p style="margin-top:8px">or tap to browse · PNG, JPG, WEBP</p>
+          </div>
+          <div class="btn-upload">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Choose Image
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-pill">Zoom <span id="hud-zoom">100%</span></div>
+      <div class="hud-pill">Tile <span id="hud-tile">—</span></div>
+    </div>
+  </div>
+
+  <!-- Side panel -->
+  <div id="panel">
+    <div class="panel-header">
+      <h2>Texture Tester</h2>
+      <span>Seamless Preview</span>
+    </div>
+
+    <!-- Thumbnail -->
+    <div id="thumb-wrap">
+      <img id="thumb-img" alt="texture thumbnail">
+      <div id="thumb-placeholder">No texture loaded</div>
+    </div>
+
+    <!-- Zoom controls -->
+    <div class="panel-section">
+      <div class="label">Zoom</div>
+      <div class="zoom-row">
+        <input type="range" id="zoom-slider" min="5" max="800" value="100" step="1">
+        <div class="zoom-val" id="zoom-display">100%</div>
+      </div>
+      <div class="zoom-btns">
+        <button onclick="setZoom(zoom*0.5)">½×</button>
+        <button onclick="setZoom(100)">1:1</button>
+        <button onclick="setZoom(zoom*2)">2×</button>
+        <button onclick="fitZoom()">Fit</button>
+      </div>
+    </div>
+
+    <!-- Tile size -->
+    <div class="panel-section">
+      <div class="label">Tile Size Override</div>
+      <div class="tile-row">
+        <input type="range" class="green" id="tile-slider" min="16" max="1024" value="256" step="8">
+        <div class="tile-val" id="tile-display">Auto</div>
+      </div>
+      <div class="zoom-btns">
+        <button onclick="setTileAuto()">Auto</button>
+        <button onclick="setTile(64)">64px</button>
+        <button onclick="setTile(128)">128px</button>
+        <button onclick="setTile(256)">256px</button>
+      </div>
+    </div>
+
+    <!-- Info -->
+    <div class="panel-section">
+      <div class="label">Info</div>
+      <div class="info-grid">
+        <div class="info-item"><div class="key">Width</div><div class="val" id="info-w">—</div></div>
+        <div class="info-item"><div class="key">Height</div><div class="val" id="info-h">—</div></div>
+        <div class="info-item"><div class="key">Tile W</div><div class="val" id="info-tw">—</div></div>
+        <div class="info-item"><div class="key">Tile H</div><div class="val" id="info-th">—</div></div>
+      </div>
+    </div>
+
+    <!-- Reset -->
+    <div class="panel-section">
+      <button class="btn-reset" onclick="resetTexture()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>
+        Load New Texture
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile toggle -->
+  <button id="panel-toggle" onclick="document.getElementById('panel').classList.toggle('open')">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+</div>
+
+<input type="file" id="file-input" accept="image/*">
+
+<script>
+function triggerFileInput(e) {
+  if (e && e.target.closest('#panel-toggle')) return;
+  document.getElementById('file-input').click();
+}
+
+const canvas = document.getElementById('tiled-canvas');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvas-wrap');
+const overlay = document.getElementById('upload-overlay');
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const thumbImg = document.getElementById('thumb-img');
+const thumbPlaceholder = document.getElementById('thumb-placeholder');
+
+let textureImg = null;
+let zoom = 100;           // percent
+let tileOverride = null;  // null = auto (use image native size)
+let panX = 0, panY = 0;
+let isDragging = false;
+let lastX = 0, lastY = 0;
+
+// ── RESIZE ──────────────────────────────────────────
+function resizeCanvas() {
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  drawTiles();
+}
+window.addEventListener('resize', resizeCanvas);
+
+// ── DRAW ────────────────────────────────────────────
+function drawTiles() {
+  if (!textureImg) return;
+  const W = canvas.width, H = canvas.height;
+  const tileW = tileOverride || textureImg.naturalWidth;
+  const tileH = tileOverride
+    ? Math.round(textureImg.naturalHeight * (tileOverride / textureImg.naturalWidth))
+    : textureImg.naturalHeight;
+
+  const scale = zoom / 100;
+  const scaledW = tileW * scale;
+  const scaledH = tileH * scale;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // offset wrapping
+  const ox = ((panX % scaledW) + scaledW) % scaledW;
+  const oy = ((panY % scaledH) + scaledH) % scaledH;
+
+  const startX = ox - scaledW;
+  const startY = oy - scaledH;
+
+  ctx.imageSmoothingEnabled = scale > 1 ? false : true;
+
+  for (let y = startY; y < H + scaledH; y += scaledH) {
+    for (let x = startX; x < W + scaledW; x += scaledW) {
+      ctx.drawImage(textureImg, 0, 0, textureImg.naturalWidth, textureImg.naturalHeight,
+        Math.round(x), Math.round(y), Math.round(scaledW), Math.round(scaledH));
+    }
+  }
+
+  // HUD
+  document.getElementById('hud-zoom').textContent = Math.round(zoom) + '%';
+  document.getElementById('hud-tile').textContent = Math.round(scaledW) + '×' + Math.round(scaledH) + 'px';
+  document.getElementById('info-tw').textContent = Math.round(scaledW) + 'px';
+  document.getElementById('info-th').textContent = Math.round(scaledH) + 'px';
+}
+
+// ── ZOOM ────────────────────────────────────────────
+function setZoom(val) {
+  zoom = Math.min(800, Math.max(5, val));
+  document.getElementById('zoom-slider').value = zoom;
+  document.getElementById('zoom-display').textContent = Math.round(zoom) + '%';
+  drawTiles();
+}
+
+function fitZoom() {
+  if (!textureImg) return;
+  const tileW = tileOverride || textureImg.naturalWidth;
+  const tileH = tileOverride
+    ? Math.round(textureImg.naturalHeight * (tileOverride / textureImg.naturalWidth))
+    : textureImg.naturalHeight;
+  const scale = Math.min(wrap.clientWidth / tileW, wrap.clientHeight / tileH) * 100;
+  setZoom(scale);
+}
+
+document.getElementById('zoom-slider').addEventListener('input', e => {
+  setZoom(parseFloat(e.target.value));
+});
+
+// ── TILE SIZE ────────────────────────────────────────
+function setTile(px) {
+  tileOverride = px;
+  document.getElementById('tile-slider').value = px;
+  document.getElementById('tile-display').textContent = px + 'px';
+  drawTiles();
+}
+function setTileAuto() {
+  tileOverride = null;
+  document.getElementById('tile-display').textContent = 'Auto';
+  if (textureImg) document.getElementById('tile-slider').value = textureImg.naturalWidth;
+  drawTiles();
+}
+document.getElementById('tile-slider').addEventListener('input', e => {
+  setTile(parseInt(e.target.value));
+});
+
+// ── LOAD IMAGE ──────────────────────────────────────
+function loadImage(src, name) {
+  const img = new Image();
+  img.onload = () => {
+    textureImg = img;
+    overlay.classList.add('hidden');
+    tileOverride = null;
+    panX = 0; panY = 0;
+    zoom = 100;
+    document.getElementById('zoom-slider').value = 100;
+    document.getElementById('zoom-display').textContent = '100%';
+    document.getElementById('tile-slider').value = img.naturalWidth;
+    document.getElementById('tile-display').textContent = 'Auto';
+    document.getElementById('info-w').textContent = img.naturalWidth + 'px';
+    document.getElementById('info-h').textContent = img.naturalHeight + 'px';
+    thumbImg.src = src;
+    thumbImg.style.display = 'block';
+    thumbPlaceholder.style.display = 'none';
+    resizeCanvas();
+    fitZoom();
+  };
+  img.src = src;
+}
+
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  loadImage(url, file.name);
+});
+
+// ── DRAG & DROP ─────────────────────────────────────
+['dragenter','dragover'].forEach(ev => {
+  wrap.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+});
+['dragleave','drop'].forEach(ev => {
+  wrap.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); });
+});
+wrap.addEventListener('drop', e => {
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    loadImage(URL.createObjectURL(file), file.name);
+  }
+});
+
+// ── PAN (Mouse) ──────────────────────────────────────
+wrap.addEventListener('mousedown', e => {
+  if (!textureImg) return;
+  isDragging = true;
+  lastX = e.clientX; lastY = e.clientY;
+  wrap.classList.add('dragging');
+});
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  panX += e.clientX - lastX;
+  panY += e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  drawTiles();
+});
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  wrap.classList.remove('dragging');
+});
+
+// ── ZOOM (Scroll) ─────────────────────────────────────
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  setZoom(zoom * factor);
+}, { passive: false });
+
+// ── PAN + PINCH (Touch) ──────────────────────────────
+let touches = {};
+let lastPinchDist = null;
+
+wrap.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) touches[t.identifier] = { x: t.clientX, y: t.clientY };
+  if (e.touches.length === 1) {
+    isDragging = true;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+  }
+  if (e.touches.length === 2) {
+    isDragging = false;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastPinchDist = Math.hypot(dx, dy);
+  }
+}, { passive: false });
+
+wrap.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!textureImg) return;
+
+  if (e.touches.length === 1 && isDragging) {
+    const dx = e.touches[0].clientX - lastX;
+    const dy = e.touches[0].clientY - lastY;
+    panX += dx; panY += dy;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+    drawTiles();
+  }
+
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.hypot(dx, dy);
+    if (lastPinchDist) {
+      const factor = dist / lastPinchDist;
+      setZoom(zoom * factor);
+    }
+    lastPinchDist = dist;
+  }
+}, { passive: false });
+
+wrap.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) delete touches[t.identifier];
+  if (e.touches.length < 2) lastPinchDist = null;
+  if (e.touches.length === 0) isDragging = false;
+});
+
+// ── RESET ────────────────────────────────────────────
+function resetTexture() {
+  textureImg = null;
+  overlay.classList.remove('hidden');
+  thumbImg.style.display = 'none';
+  thumbPlaceholder.style.display = 'flex';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById('info-w').textContent = '—';
+  document.getElementById('info-h').textContent = '—';
+  document.getElementById('info-tw').textContent = '—';
+  document.getElementById('info-th').textContent = '—';
+  document.getElementById('hud-zoom').textContent = '100%';
+  document.getElementById('hud-tile').textContent = '—';
+  fileInput.value = '';
+}
+
+// ── INIT ──────────────────────────────────────────────
+resizeCanvas();
+</script>
+</body>
+</html>
