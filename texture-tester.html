@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Texture Tester</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #050810;
+    --panel:    #0b0f1c;
+    --border:   #1a2340;
+    --accent:   #2af5c8;
+    --accent2:  #5b8fff;
+    --dim:      #3a4a6b;
+    --text:     #c8d8f0;
+    --muted:    #5a6a8a;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Canvas ── */
+  #canvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+  #canvas.dragging { cursor: grabbing; }
+
+  /* ── HUD overlay ── */
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* corner brackets */
+  .bracket {
+    position: absolute;
+    width: 28px; height: 28px;
+    border-color: var(--dim);
+    border-style: solid;
+    opacity: 0.6;
+  }
+  .bracket.tl { top:16px; left:16px;  border-width: 2px 0 0 2px; }
+  .bracket.tr { top:16px; right:16px; border-width: 2px 2px 0 0; }
+  .bracket.bl { bottom:16px; left:16px;  border-width: 0 0 2px 2px; }
+  .bracket.br { bottom:16px; right:16px; border-width: 0 2px 2px 0; }
+
+  /* crosshair */
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px; height: 20px;
+    opacity: 0.25;
+  }
+  #crosshair::before,
+  #crosshair::after {
+    content: '';
+    position: absolute;
+    background: var(--accent);
+  }
+  #crosshair::before { width: 1px; height: 100%; left: 50%; transform: translateX(-50%); }
+  #crosshair::after  { height: 1px; width: 100%; top: 50%;  transform: translateY(-50%); }
+
+  /* ── Control panel ── */
+  #controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(11,15,28,0.85);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 14px;
+    backdrop-filter: blur(12px);
+    z-index: 20;
+    pointer-events: all;
+    white-space: nowrap;
+  }
+
+  /* vertical rule */
+  .sep {
+    width: 1px;
+    height: 28px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  /* upload button */
+  #uploadBtn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    color: var(--accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: background 0.18s, box-shadow 0.18s;
+    overflow: hidden;
+  }
+  #uploadBtn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.18s;
+  }
+  #uploadBtn:hover::before { opacity: 0.08; }
+  #uploadBtn:hover { box-shadow: 0 0 14px rgba(42,245,200,0.18); }
+  #uploadBtn svg { flex-shrink: 0; }
+  #fileInput { display: none; }
+
+  /* reset button */
+  #resetBtn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: border-color 0.18s, color 0.18s, box-shadow 0.18s;
+  }
+  #resetBtn:hover {
+    border-color: var(--accent2);
+    color: var(--accent2);
+    box-shadow: 0 0 12px rgba(91,143,255,0.15);
+  }
+
+  /* grid toggle button */
+  #gridBtn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: border-color 0.18s, color 0.18s, box-shadow 0.18s, background 0.18s;
+  }
+  #gridBtn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 12px rgba(42,245,200,0.12);
+  }
+  #gridBtn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(42,245,200,0.07);
+    box-shadow: 0 0 14px rgba(42,245,200,0.15);
+  }
+
+  /* zoom readout */
+  #zoomLabel {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 52px;
+    text-align: right;
+    letter-spacing: 0.05em;
+  }
+
+  /* status / title */
+  #status {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 20;
+    text-align: center;
+    transition: color 0.4s;
+  }
+  #status.active { color: var(--accent); }
+
+  /* drop-zone hint (shows before image loaded) */
+  #dropHint {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    pointer-events: none;
+    z-index: 15;
+    transition: opacity 0.4s;
+  }
+  #dropHint.hidden { opacity: 0; }
+  #dropHint .icon {
+    width: 56px; height: 56px;
+    border: 1.5px solid var(--dim);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0.5;
+  }
+  #dropHint p {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  #dropHint small {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+
+<!-- Full-screen canvas -->
+<canvas id="canvas"></canvas>
+
+<!-- HUD chrome -->
+<div id="hud">
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+  <div id="crosshair"></div>
+</div>
+
+<!-- Status label -->
+<div id="status">Texture Viewer</div>
+
+<!-- Empty-state hint -->
+<div id="dropHint">
+  <div class="icon">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3a4a6b" stroke-width="1.5">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <path d="M21 15l-5-5L5 21"/>
+    </svg>
+  </div>
+  <p>Upload a texture to begin</p>
+  <small>PNG / JPG / WEBP</small>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <button id="uploadBtn">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    LOAD TEXTURE
+  </button>
+  <input type="file" id="fileInput" accept="image/*">
+
+  <div class="sep"></div>
+
+  <button id="resetBtn">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+      <path d="M3 3v5h5"/>
+    </svg>
+    RESET
+  </button>
+
+  <div class="sep"></div>
+
+  <button id="gridBtn">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+    </svg>
+    GRID
+  </button>
+
+  <div class="sep"></div>
+
+  <span id="zoomLabel">100%</span>
+</div>
+
+<script>
+/* =========================================================
+   SEAMLESS TEXTURE VIEWER
+   Renders an infinitely tiling texture using HTML5 Canvas 2D
+   createPattern() + CanvasRenderingContext2D transform.
+
+   KEY MATH:
+   - We keep a logical pan offset (panX, panY) and a zoom scale.
+   - Before drawing, we apply setTransform(scale, 0, 0, scale, panX, panY).
+   - ctx.createPattern(img, 'repeat') lets the GPU/browser handle
+     infinite tiling natively — no manual tile loops, no memory waste.
+   - Modulo is implicitly handled by the browser's pattern repeat
+     engine; we never need to clamp or wrap offsets ourselves.
+   - On each frame we clear, set the transform, and fill a rect
+     large enough to cover the visible viewport in pattern-space.
+   ========================================================= */
+
+(function () {
+  'use strict';
+
+  /* ── DOM refs ── */
+  const canvas    = document.getElementById('canvas');
+  const ctx       = canvas.getContext('2d');
+  const fileInput = document.getElementById('fileInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const resetBtn  = document.getElementById('resetBtn');
+  const gridBtn   = document.getElementById('gridBtn');
+  const zoomLabel = document.getElementById('zoomLabel');
+  const dropHint  = document.getElementById('dropHint');
+  const status    = document.getElementById('status');
+
+  /* ── State ── */
+  let pattern  = null;
+  let imgW     = 1;
+  let imgH     = 1;
+
+  let panX = 0;
+  let panY = 0;
+  let scale = 1;
+  let targetScale = 1;
+  let showGrid = false;  // grid overlay toggle
+
+  // Rendering loop flag
+  let rafId = null;
+  let dirty = true; // force first draw
+
+  /* ── Constants ── */
+  const SCALE_MIN  = 0.05;
+  const SCALE_MAX  = 40;
+  const ZOOM_SPEED = 0.0012;   // per wheel delta unit
+  const LERP_SPEED = 0.18;     // zoom smoothing (0-1, higher = snappier)
+
+  /* ── Resize handling ── */
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width  = Math.floor(window.innerWidth  * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    canvas.style.width  = window.innerWidth  + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    dirty = true;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  /* ── Image loading ── */
+  function loadImage(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = function () {
+      imgW = img.naturalWidth;
+      imgH = img.naturalHeight;
+
+      /* Create a repeating pattern from the image.
+         'repeat' tells the browser to tile in both axes infinitely.
+         This is a single GPU-resident texture — no duplication. */
+      pattern = ctx.createPattern(img, 'repeat');
+      URL.revokeObjectURL(url);
+
+      // Center the view on load, fitting the image at a nice scale
+      resetView();
+
+      dropHint.classList.add('hidden');
+      setStatus(file.name, true);
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
+
+  /* ── Reset view to centered, fitting zoom ── */
+  function resetView() {
+    const dpr = window.devicePixelRatio || 1;
+    const vw  = canvas.width  / dpr;
+    const vh  = canvas.height / dpr;
+
+    // Fit the image (one tile) inside the viewport with some padding
+    const fitScale = Math.min(vw / imgW, vh / imgH) * 0.8;
+    scale       = fitScale;
+    targetScale = fitScale;
+
+    // Center the pattern origin so a single tile is centered
+    panX = (vw  - imgW * scale) / 2;
+    panY = (vh  - imgH * scale) / 2;
+
+    dirty = true;
+  }
+
+  /* ── Render loop ── */
+  function render() {
+    rafId = requestAnimationFrame(render);
+
+    // Smooth zoom interpolation
+    if (Math.abs(scale - targetScale) > 0.0001) {
+      scale = scale + (targetScale - scale) * LERP_SPEED;
+      dirty = true;
+    } else {
+      scale = targetScale;
+    }
+
+    if (!dirty) return;
+    dirty = false;
+
+    const dpr = window.devicePixelRatio || 1;
+    const cw  = canvas.width;
+    const ch  = canvas.height;
+
+    // Clear to transparent (body bg shows through before image loaded)
+    ctx.clearRect(0, 0, cw, ch);
+
+    if (!pattern) return; // nothing to draw yet
+
+    /* ── CORE RENDERING MATH ──────────────────────────────────────
+       We want the pattern to repeat infinitely, anchored to (panX, panY)
+       in screen space, scaled by `scale`.
+
+       setTransform(a, b, c, d, e, f) sets the CTM:
+         [ a  c  e ]     [ scale  0      panX*dpr ]
+         [ b  d  f ]  =  [ 0      scale  panY*dpr ]
+         [ 0  0  1 ]     [ 0      0      1        ]
+
+       The pattern origin (0,0 in pattern space) maps to (panX*dpr, panY*dpr)
+       in canvas pixels. Each pattern unit is imgW×imgH CSS pixels = imgW×imgH*dpr
+       canvas pixels, but because we apply the transform uniformly, the pattern
+       tiles perfectly at the current zoom without any manual offset wrapping.
+
+       The fill rect is drawn in PATTERN space (before transform), so we need
+       to cover the entire visible viewport. We inflate by one tile in each
+       direction to guarantee no edge gaps.
+       ─────────────────────────────────────────────────────────── */
+
+    const s   = scale * dpr;
+    const ox  = panX  * dpr;
+    const oy  = panY  * dpr;
+
+    ctx.save();
+    ctx.setTransform(s, 0, 0, s, ox, oy);
+
+    /* setTransform on the context does NOT move the pattern origin automatically.
+       We need to apply the same transform to the pattern itself so it aligns
+       with the visible content, otherwise the pattern stays fixed at (0,0)
+       in canvas space regardless of pan.
+
+       The pattern matrix is a DOMMatrix: we set its scale so one texture
+       tile = imgW×imgH in pattern coordinate space (which is pre-transform). */
+    const pm = new DOMMatrix();
+    pattern.setTransform(pm); // identity — pattern coords = image pixels
+
+    /* Calculate the coverage rectangle in pattern space.
+       Visible area in canvas pixels: 0..cw, 0..ch
+       After inverse transform that maps canvas → pattern space:
+         x_pattern = (x_canvas - ox) / s
+       We add one tile of padding on each side to prevent edge flicker. */
+    const invS = 1 / s;
+    const x0   = Math.floor((-ox * invS) - imgW);
+    const y0   = Math.floor((-oy * invS) - imgH);
+    const x1   = Math.ceil((cw - ox) * invS + imgW);
+    const y1   = Math.ceil((ch - oy) * invS + imgH);
+
+    ctx.fillStyle = pattern;
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+
+    /* ── GRID OVERLAY ────────────────────────────────────────────
+       When enabled, draw hairline rectangle borders aligned exactly
+       to each tile boundary in pattern space. Because we are already
+       inside the same transform used for the texture, tile edges fall
+       exactly on integer multiples of imgW / imgH — no extra math needed.
+
+       We iterate only over the visible tile range (same x0..x1, y0..y1
+       coverage as the fill rect, snapped to tile boundaries) so the loop
+       count is always small regardless of pan position.
+       ─────────────────────────────────────────────────────────── */
+    if (showGrid) {
+      // Snap to the nearest tile boundary to the left/top of the fill area
+      const tileX0 = Math.floor(x0 / imgW) * imgW;
+      const tileY0 = Math.floor(y0 / imgH) * imgH;
+
+      ctx.save();
+      // Line width in pattern space: we want ~1 css pixel on screen,
+      // so divide by the compound scale (s already includes dpr).
+      ctx.lineWidth   = 1 / s;
+      ctx.strokeStyle = 'rgba(42, 245, 200, 0.55)';
+      ctx.shadowColor = 'rgba(42, 245, 200, 0.4)';
+      ctx.shadowBlur  = 3 / s;
+
+      for (let tx = tileX0; tx < x1; tx += imgW) {
+        for (let ty = tileY0; ty < y1; ty += imgH) {
+          ctx.strokeRect(tx, ty, imgW, imgH);
+        }
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // Update zoom readout
+    zoomLabel.textContent = Math.round(scale * 100) + '%';
+  }
+
+  /* ── Input: Mouse wheel zoom ── */
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+
+    const dpr = window.devicePixelRatio || 1;
+    // Mouse position in CSS pixels (relative to viewport)
+    const mx  = e.clientX;
+    const my  = e.clientY;
+
+    /* Zoom toward the cursor:
+       1. Compute the point under the cursor in "world" coords before zoom.
+       2. Apply zoom.
+       3. Adjust pan so that same world point is still under the cursor. */
+    const delta     = -e.deltaY * ZOOM_SPEED;
+    const zoomFactor = Math.exp(delta);
+    const newScale  = Math.min(SCALE_MAX, Math.max(SCALE_MIN, targetScale * zoomFactor));
+
+    // World coords of mouse: worldX = (mx - panX) / scale
+    const worldX = (mx - panX) / targetScale;
+    const worldY = (my - panY) / targetScale;
+
+    // New pan to keep worldX/Y under cursor after scale change
+    panX = mx - worldX * newScale;
+    panY = my - worldY * newScale;
+
+    targetScale = newScale;
+    dirty = true;
+  }, { passive: false });
+
+  /* ── Input: Mouse drag pan ── */
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let panStartX  = 0;
+  let panStartY  = 0;
+
+  canvas.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    panStartX  = panX;
+    panStartY  = panY;
+    canvas.classList.add('dragging');
+  });
+
+  window.addEventListener('mousemove', function (e) {
+    if (!isDragging) return;
+    panX  = panStartX + (e.clientX - dragStartX);
+    panY  = panStartY + (e.clientY - dragStartY);
+    dirty = true;
+  });
+
+  window.addEventListener('mouseup', function () {
+    isDragging = false;
+    canvas.classList.remove('dragging');
+  });
+
+  /* ── Input: Touch pan + pinch zoom ── */
+  let touches       = {};  // active touch map: id → {x, y}
+  let lastMidX      = 0;
+  let lastMidY      = 0;
+  let lastPinchDist = 0;
+
+  function getTouchMap(e) {
+    const map = {};
+    for (const t of e.touches) map[t.identifier] = { x: t.clientX, y: t.clientY };
+    return map;
+  }
+
+  function pinchDist(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  canvas.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    touches = getTouchMap(e);
+    const ids = Object.keys(touches);
+    if (ids.length === 2) {
+      const a = touches[ids[0]], b = touches[ids[1]];
+      lastMidX      = (a.x + b.x) / 2;
+      lastMidY      = (a.y + b.y) / 2;
+      lastPinchDist = pinchDist(a, b);
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    const curr = getTouchMap(e);
+    const ids  = Object.keys(curr);
+
+    if (ids.length === 1) {
+      /* ── Single-finger pan ── */
+      const prev = touches[ids[0]];
+      if (prev) {
+        panX  += curr[ids[0]].x - prev.x;
+        panY  += curr[ids[0]].y - prev.y;
+        dirty  = true;
+      }
+    } else if (ids.length === 2) {
+      /* ── Two-finger pinch-zoom + pan ── */
+      const a = curr[ids[0]], b = curr[ids[1]];
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      const dist = pinchDist(a, b);
+
+      /* Zoom: scale by ratio of current / previous pinch distance.
+         Zoom is anchored to the midpoint between both fingers. */
+      if (lastPinchDist > 0) {
+        const zoomFactor = dist / lastPinchDist;
+        const newScale   = Math.min(SCALE_MAX, Math.max(SCALE_MIN, targetScale * zoomFactor));
+
+        const worldMidX = (lastMidX - panX) / targetScale;
+        const worldMidY = (lastMidY - panY) / targetScale;
+        panX = lastMidX - worldMidX * newScale;
+        panY = lastMidY - worldMidY * newScale;
+
+        targetScale = newScale;
+        scale       = newScale; // skip lerp on touch for responsiveness
+      }
+
+      // Pan by midpoint delta
+      panX  += midX - lastMidX;
+      panY  += midY - lastMidY;
+
+      lastMidX      = midX;
+      lastMidY      = midY;
+      lastPinchDist = dist;
+      dirty = true;
+    }
+
+    touches = curr;
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', function (e) {
+    touches       = getTouchMap(e);
+    lastPinchDist = 0;
+  }, { passive: false });
+
+  /* ── File input ── */
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', function () {
+    if (this.files && this.files[0]) loadImage(this.files[0]);
+  });
+
+  /* ── Drag-and-drop onto canvas ── */
+  document.addEventListener('dragover',  e => e.preventDefault());
+  document.addEventListener('drop', function (e) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) loadImage(file);
+  });
+
+  /* ── Grid toggle ── */
+  gridBtn.addEventListener('click', function () {
+    showGrid = !showGrid;
+    gridBtn.classList.toggle('active', showGrid);
+    dirty = true;
+  });
+
+  /* ── Reset button ── */
+  resetBtn.addEventListener('click', function () {
+    if (pattern) resetView();
+    else { panX = 0; panY = 0; scale = 1; targetScale = 1; dirty = true; }
+  });
+
+  /* ── Status helper ── */
+  function setStatus(msg, highlight) {
+    status.textContent = msg;
+    if (highlight) {
+      status.classList.add('active');
+      setTimeout(() => status.classList.remove('active'), 2000);
+    }
+  }
+
+  /* ── Start render loop ── */
+  render();
+
+}());
+</script>
+</body>
+</html>
